@@ -1,0 +1,23 @@
+# Core ML Libraries
+torch
+torchvision
+torchaudio
+pytorch-lightning
+
+# Image Augmentation
+albumentations
+
+# Cytomine Integration
+cytomine-python-client
+
+# Visualization
+matplotlib
+seaborn
+plotly
+
+# Experiment Tracking
+wandb
+
+# Notebook Environment
+jupyter
+ipykernel
