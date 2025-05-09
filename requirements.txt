@@ -1,7 +1,4 @@
 # Core ML Libraries
-torch
-torchvision
-torchaudio
 pytorch-lightning
 
 # Image Augmentation
@@ -21,3 +18,12 @@ wandb
 # Notebook Environment
 jupyter
 ipykernel
+scikit-learn
+
+tensorboard
+
+# --extra-index-url https://download.pytorch.org/whl/cu118
+torch
+torchvision
+torchaudio
+

@@ -36,3 +36,12 @@ package-lock.json
 package.json
 
 .env.example
+
+data**
+experiments/lightning_logs**
+notebooks/lightning_checkpoints**
+
+**__pycache__
+**.pyc
+venv**
+
