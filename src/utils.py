@@ -84,6 +84,175 @@ pio.templates.default = "plotly_white"
 # Ensure your dataset (e.g., NSCLC IHC images) is in this directory
 # with subfolders for each class ('TER', 'Necrotic', etc.)
 
+import torchvision.utils as vutils
+
+
+
+import os
+import shutil
+import zipfile
+import yaml
+import torch
+from pathlib import Path
+
+def export_torchscript_for_icy(model_path, output_path, model_name, num_classes, test_input_image, authors=None, cite=None):
+    # Paths
+    model_dir = Path(model_path)
+    output_dir = Path(output_path)
+    output_dir.mkdir(parents=True, exist_ok=True)
+
+    # Define minimal rdf.yaml
+    rdf_content = {
+        "name": model_name,
+        "version": 1,
+        "description": "TorchScript model for classification",
+        "type": "model",
+        "format_version": "0.4.10",
+        "weights": {
+            "torchscript": {
+                "source": "weights_torchscript.pt",
+                "pytorch_version": {
+                    "version": "2.0.0",
+                    "sha256": "0e9f91a8ce399632b3a3ec3bc5529afc5610651b5c142c6e7be975352c9c5c89"
+                },
+            }
+        },
+        "inputs": [
+            {
+                "name": "input0",
+                "axes": "bcxy",
+                "shape": [1, 1, 512, 512],
+                "data_type": "float32",
+                "data_range": [-float('inf'), float('inf')]
+            }
+        ],
+        "authors": authors if authors else [],
+        "cite": cite if cite else [],
+        "config": {
+            "bioimageio": {
+                "nickname": "Hedgehog",
+                "nickname_icon": "🦔",
+                "test_kwargs": {
+                    "pytorch_state_dict": {"decimal": 2},
+                    "torchscript": {"decimal": 2}
+                },
+                "thumbnails": {"cover.png": "cover.thumbnail.png"}
+            }
+        },
+        "outputs": [
+            {
+                "name": "output0",
+                "axes": "bcxy",
+                "shape": [1, num_classes, 1, 1],
+                "data_type": "float32",
+                "data_range": [0.0, 1.0]
+            }
+        ],
+    }
+
+    # Load metadata from provided rdf.yaml if present
+    rdf_yaml_path = model_dir / 'rdf.yaml'
+    if rdf_yaml_path.exists():
+        with open(rdf_yaml_path, 'r') as f:
+            rdf_metadata = yaml.safe_load(f)
+        # Deep update to ensure nested structures are merged without overwriting
+        def deep_update(source, overrides):
+            for key, value in overrides.items():
+                if isinstance(value, dict) and key in source and isinstance(source[key], dict):
+                    deep_update(source[key], value)
+                else:
+                    source[key] = value
+
+        deep_update(rdf_content, rdf_metadata)
+
+
+    # Write the rdf.yaml
+    rdf_path = output_dir / "rdf.yaml"
+    with open(rdf_path, 'w') as f:
+        yaml.dump(rdf_content, f)
+
+    # Copy TorchScript model
+    torchscript_path = model_dir
+    shutil.copy(torchscript_path, output_dir / "weights_torchscript.pt")
+
+    # Copy test input image
+    test_input_dest = output_dir / "test-input.npy"
+    
+    shutil.copy(test_input_image, test_input_dest)
+
+    # Copy other test files
+    for test_file in ["test-input.npy", "test-output.npy", "cover.png"]:
+        src_file = model_dir / test_file
+        if src_file.exists():
+            shutil.copy(src_file, output_dir / test_file)
+
+    # Create ZIP
+    zip_name = f"{model_name}.zip"
+    with zipfile.ZipFile(zip_name, 'w', zipfile.ZIP_DEFLATED) as zipf:
+        for file_path in output_dir.glob("*"):
+            zipf.write(file_path, file_path.name)
+
+    print(f"Exported model to {zip_name}")
+    return zip_name
+
+# Example usage:
+# export_torchscript_for_icy("/path/to/model_dir", "/path/to/output_dir", "MyModel", num_classes=5)
+
+
+
+def visualize_transformations(sample_image_np, transforms, grid_size=5):
+    """
+    Visualize transformations applied to a sample image in a grid format.
+
+    Args:
+        sample_image_np (numpy.ndarray): The sample image in NumPy array format.
+        transforms (list): A list of tuples where each tuple contains the name of the transformation
+                           and the Albumentations transformation object.
+        grid_size (int): The size of the grid (e.g., 5 for a 5x5 grid).
+    """
+    if sample_image_np is not None:
+        for name, transform in transforms:
+            transformed_images = []
+
+            # Determine reference dimensions
+            if transform is None:
+                reference_h, reference_w = sample_image_np.shape[:2]
+            else:
+                sample_transformed = transform(image=sample_image_np.copy())['image']
+                reference_h, reference_w = sample_transformed.shape[:2]
+
+            # Generate grid of transformed images
+            for j in range(grid_size * grid_size):
+                np.random.seed(j + 42)
+
+                if transform is None:
+                    transformed = sample_image_np.copy()
+                else:
+                    transformed = transform(image=sample_image_np.copy())['image']
+
+                # Resize to match reference dimensions
+                current_h, current_w = transformed.shape[:2]
+                if (current_h, current_w) != (reference_h, reference_w):
+                    transformed = cv2.resize(transformed, (reference_w, reference_h), interpolation=cv2.INTER_LINEAR)
+
+                # Convert to tensor format
+                tensor_img = torch.from_numpy(transformed.transpose(2, 0, 1)).float() / 255.0
+                transformed_images.append(tensor_img)
+
+            # Create and display grid
+            plt.figure(figsize=(10, 10))
+            batch = torch.stack(transformed_images)
+            grid = vutils.make_grid(batch, nrow=grid_size, padding=2, normalize=False)
+            plt.imshow(grid.permute(1, 2, 0))
+            plt.title(name, fontsize=16)
+            plt.axis('off')
+            plt.tight_layout()
+            plt.show()
+
+        print(f"Generated {len(transforms)} separate {grid_size}×{grid_size} transformation grids")
+    else:
+        print("Cannot visualize transformations as sample image is None.")
+
 
 def denormalize(tensor, mean=IMG_MEAN, std=IMG_STD):
     """Denormalizes a tensor image with mean and standard deviation."""
